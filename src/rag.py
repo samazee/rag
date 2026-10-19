@@ -1,38 +1,34 @@
 import json
-from tqdm import tqdm
 from pathlib import Path
 from collections.abc import Generator
 from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader
 from langchain_community.retrievers import TFIDFRetriever
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from .models import MinimalSource
+
 
 class RAG:
-    def __init__(self):
-        self._index: list[dict] = []
+    def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
+        self._index: list[MinimalSource] = []
         self.retriever: TFIDFRetriever | None = None
-
-    def index(self, max_chunck_size: int) -> list[Document]:
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
         index_file = Path("data/processed/index.json")
         if index_file.is_file():
             with open("data/processed/index.json", "r", encoding="utf-8") as f:
                 contents = f.read()
-            self._index = json.loads(contents)
+            self._index = [MinimalSource.from_dict(item) for item in json.loads(contents) ]
             documents = [
-                Document(
-                    page_content=record["chunk"],
-                    metadata={
-                        "file_path": record["file_path"],
-                        "start": record["start"],
-                        "end": record["end"],
-                    }
-                )
-                for record in self._index
+                Minimal_.to_document() for record in self._index
             ]
             self.retriever = TFIDFRetriever.from_documents(documents)
-        else:
-            raw_dir = Path("data/raw")
 
+    def index(self, max_chunk_size: int) -> list[Document]:
+        index_file = Path("data/processed/index.json")
+        if not index_file.is_file():
+            raw_dir = Path("data/raw")
             for file in raw_dir.rglob("*"):
                 if not file.is_file():
                     continue
@@ -41,28 +37,11 @@ class RAG:
                 except (OSError, UnicodeDecodeError, RuntimeError):
                     continue
                 splitter = RAG.file_splitter(file, max_chunk_size)
-                for doc in splitter.split_documents(docs):
-                    start_index = doc.metadata.get("start_index", 0)
-                    if start_index < 0:
-                        start_index = 0
-                    self._index.append({
-                        "file_path": file.as_posix(),
-                        "start": start_index + 1,
-                        "end": start_index + len(doc.page_content),
-                        "chunk": doc.page_content,
-                    })
+                self._index = [MinimalSource.from_document(doc) for doc in splitter.split_documents(docs)]
             with open("data/processed/index.json", "w") as f:
-                json.dump(self._index, f, indent=4)
+                json.dump([item.to_dict() for item in self._index], f, indent=4)
             documents = [
-                Document(
-                    page_content=record["chunk"],
-                    metadata={
-                        "file_path": record["file_path"],
-                        "start": record["start"],
-                        "end": record["end"],
-                    }
-                )
-                for record in self._index
+                record.to_document() for record in self._index
             ]
             self.retriever = TFIDFRetriever.from_documents(documents)
         return self._index
@@ -70,6 +49,36 @@ class RAG:
     def topk_retriever(self, k: int):
         self.retriever.k = k
         return self.retriever
+    
+    def answer(self, query: str, k: int=5, sources: list[Document] | None = None):
+        if not sources:
+            sources = self.topk_retriever(k).invoke(query)
+        context = "\n\n".join(
+            f"[{doc.metadata['file_path']}:{doc.metadata['start']}-{doc.metadata['end']}]\n"
+            f"{doc.page_content}"
+            for doc in sources
+        )
+        prompt = (
+            "Answer the question using only the context below.\n"
+            "If the context does not contain the answer, say you do not know.\n\n"
+            f"Context:\n{context}\n\n"
+            f"Question: {query}\n"
+            "Answer:"
+        )
+        messages = [
+            {"role": "system", "content": "Answer using only the provided context."},
+            {"role": "user", "content": prompt},
+        ]
+        inputs = self.tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict = True,
+            enable_thinking = False,
+        ).to(self.model.device)
+        input_ids = inputs["input_ids"]
+        output = self.model.generate(**inputs, max_new_tokens=256, do_sample=False)
+        return self.tokenizer.decode(output[0, input_ids.shape[-1]:], skip_special_tokens=True)
 
     @staticmethod
     def file_splitter(path: Path, max_chunk_size: int) -> RecursiveCharacterTextSplitter:
@@ -94,34 +103,3 @@ class RAG:
             chunk_overlap=overlap,
             add_start_index=True,
         )
-
-
-class CLI:
-    def __init__(self):
-        self.rag = RAG()
-
-    def index(self, max_chunck_size: int = 500) -> None:
-        chunks = self.rag.index(max_chunck_size)
-        for _ in tqdm(chunks):
-            pass
-
-    def search(self, query: str, k: int = 5) -> None:
-        if len(self.rag._index) == 0 or not self.rag.retriever:
-            self.index()
-        for doc in self.rag.topk_retriever(k).invoke(query):
-            meta = doc.metadata
-            print(f"{meta['file_path']}:{meta['start']}-{meta['end']}")
-            print(doc.page_content)
-            print()
-
-    def search_dataset(self, dataset_path: str = "dataset/search", k: int = 5, save_directory = "results/search") -> None:
-        print("searching dataset...")
-
-    def answer(self, query: str, k: int = 5) -> None:
-        print("answering...")
-
-    def answer_dataset(self, student_search_results_path: str = "results/search", save_directory: str = "results/answer") -> None:
-        print("answering dataset...")
-
-    def evaluate(self, student_search_results_path: str = "results/search", dataset_path: str = "dataset/answer") -> None:
-        print("evaluating...")
