@@ -8,7 +8,8 @@ class Model(BaseModel):
     def from_dict(cls, data: dict[str, Any]) -> "Model | None":
         try:
             return cls.model_validate(data)
-        except ValidationError:
+        except ValidationError as e:
+            print(e)
             return None
 
     def to_dict(self) -> dict[str, Any]:
@@ -67,13 +68,13 @@ class RagDataset(Model):
             questions = [
                 UnansweredQuestion.from_dict(item) for item in data["rag_questions"]
             ]
-        except (KeyError, TypeError):
+        except (KeyError, TypeError) as e:
             return None
         if any(question is None for question in questions):
             return None
         try:
             return cls(rag_questions=questions)
-        except ValidationError:
+        except ValidationError as e:
             return None
 
 

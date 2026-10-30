@@ -21,7 +21,7 @@ class RAG:
                 contents = f.read()
             self._index = [MinimalSource.from_dict(item) for item in json.loads(contents) ]
             documents = [
-                Minimal_.to_document() for record in self._index
+                record.to_document() for record in self._index
             ]
             self.retriever = TFIDFRetriever.from_documents(documents)
 
@@ -37,7 +37,8 @@ class RAG:
                 except (OSError, UnicodeDecodeError, RuntimeError):
                     continue
                 splitter = RAG.file_splitter(file, max_chunk_size)
-                self._index = [MinimalSource.from_document(doc) for doc in splitter.split_documents(docs)]
+                for doc in splitter.split_documents(docs):
+                    self._index.append(MinimalSource.from_document(doc))
             with open("data/processed/index.json", "w") as f:
                 json.dump([item.to_dict() for item in self._index], f, indent=4)
             documents = [
@@ -54,7 +55,7 @@ class RAG:
         if not sources:
             sources = self.topk_retriever(k).invoke(query)
         context = "\n\n".join(
-            f"[{doc.metadata['file_path']}:{doc.metadata['start']}-{doc.metadata['end']}]\n"
+            f"{doc.metadata['source']}:{doc.metadata['start_index']}-{doc.metadata['start_index'] + len(doc.page_content)}"
             f"{doc.page_content}"
             for doc in sources
         )
