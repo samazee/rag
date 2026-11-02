@@ -1,19 +1,26 @@
 from langchain_core.documents import Document
-from typing import Any
+from typing import Any, TypeVar, cast
 from pydantic import BaseModel, Field, ValidationError
 import uuid
 
+T = TypeVar("T", bound="Model")
+
+
 class Model(BaseModel):
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Model | None":
+    def from_dict(cls: type[T], data: dict[str, Any]) -> T | None:
         try:
-            return cls.model_validate(data)
-        except ValidationError as e:
-            print(e)
+            validated = cls.model_validate(data)
+        except ValidationError as exc:
+            print(exc)
             return None
+        if isinstance(validated, cls):
+            return validated
+        return None
 
     def to_dict(self) -> dict[str, Any]:
-        return self.model_dump()
+        dumped = self.model_dump()
+        return cast(dict[str, Any], dumped)
 
 
 class MinimalSource(Model):
@@ -27,15 +34,17 @@ class MinimalSource(Model):
         data = {
             "file_path": doc.metadata["source"],
             "first_character_index": doc.metadata["start_index"],
-            "last_character_index": doc.metadata["start_index"] + len(doc.page_content),
+            "last_character_index": (
+                doc.metadata["start_index"] + len(doc.page_content)
+            ),
             "chunk": doc.page_content,
         }
         return cls.from_dict(data)
 
     def to_document(self) -> Document:
         return Document(
-            page_content = self.chunk,
-            metadata = {
+            page_content=self.chunk,
+            metadata={
                 "source": self.file_path,
                 "start_index": self.first_character_index,
                 "end_index": self.last_character_index
@@ -48,8 +57,11 @@ class UnansweredQuestion(Model):
     question: str
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AnsweredQuestion | UnansweredQuestion | None":
-        if cls is UnansweredQuestion and "answer" in data and "sources" in data:
+    def from_dict(
+            cls, data: dict[str, Any]
+    ) -> "AnsweredQuestion | UnansweredQuestion | None":
+        answered = "answer" in data and "sources" in data
+        if cls is UnansweredQuestion and answered:
             return AnsweredQuestion.from_dict(data)
         return super().from_dict(data)
 
@@ -66,15 +78,16 @@ class RagDataset(Model):
     def from_dict(cls, data: dict[str, Any]) -> "RagDataset | None":
         try:
             questions = [
-                UnansweredQuestion.from_dict(item) for item in data["rag_questions"]
+                UnansweredQuestion.from_dict(item)
+                for item in data["rag_questions"]
             ]
-        except (KeyError, TypeError) as e:
+        except (KeyError, TypeError):
             return None
         if any(question is None for question in questions):
             return None
         try:
             return cls(rag_questions=questions)
-        except ValidationError as e:
+        except ValidationError:
             return None
 
 
@@ -84,7 +97,9 @@ class MinimalSearchResults(Model):
     retrieved_sources: list[MinimalSource]
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MinimalAnswer | MinimalSearchResults | None":
+    def from_dict(
+            cls, data: dict[str, Any]
+    ) -> "MinimalAnswer | MinimalSearchResults | None":
         if cls is MinimalSearchResults and "answer" in data:
             return MinimalAnswer.from_dict(data)
         return super().from_dict(data)

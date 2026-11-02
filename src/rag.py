@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from collections.abc import Generator
 from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader
 from langchain_community.retrievers import TFIDFRetriever
@@ -14,12 +13,21 @@ class RAG:
         self._index: list[MinimalSource] = []
         self.retriever: TFIDFRetriever | None = None
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map="auto",
+        )
         index_file = Path("data/processed/index.json")
         if index_file.is_file():
             with open("data/processed/index.json", "r", encoding="utf-8") as f:
                 contents = f.read()
-            self._index = [MinimalSource.from_dict(item) for item in json.loads(contents) ]
+            loaded = json.loads(contents)
+            records: list[MinimalSource] = []
+            for item in loaded:
+                record = MinimalSource.from_dict(item)
+                if record is not None:
+                    records.append(record)
+            self._index = records
             documents = [
                 record.to_document() for record in self._index
             ]
@@ -38,51 +46,80 @@ class RAG:
                     continue
                 splitter = RAG.file_splitter(file, max_chunk_size)
                 for doc in splitter.split_documents(docs):
-                    self._index.append(MinimalSource.from_document(doc))
-            with open("data/processed/index.json", "w") as f:
-                json.dump([item.to_dict() for item in self._index], f, indent=4)
+                    source = MinimalSource.from_document(doc)
+                    if source is not None:
+                        self._index.append(source)
+            with open("data/processed/index.json", "w") as handle:
+                dumped = [item.to_dict() for item in self._index]
+                json.dump(dumped, handle, indent=4)
             documents = [
                 record.to_document() for record in self._index
             ]
             self.retriever = TFIDFRetriever.from_documents(documents)
         return self._index
 
-    def topk_retriever(self, k: int):
+    def topk_retriever(self, k: int) -> TFIDFRetriever:
+        if self.retriever is None:
+            raise RuntimeError("retriever is not initialized")
         self.retriever.k = k
         return self.retriever
-    
-    def answer(self, query: str, k: int=5, sources: list[Document] | None = None):
+
+    def answer(
+            self,
+            query: str,
+            k: int = 5,
+            sources: list[Document] | None = None) -> str:
         if not sources:
             sources = self.topk_retriever(k).invoke(query)
         context = "\n\n".join(
-            f"{doc.metadata['source']}:{doc.metadata['start_index']}-{doc.metadata['start_index'] + len(doc.page_content)}"
+            f"{doc.metadata['source']}:"
+            f"{doc.metadata['start_index']}-"
+            f"{doc.metadata['start_index'] + len(doc.page_content)}"
             f"{doc.page_content}"
             for doc in sources
         )
         prompt = (
             "Answer the question using only the context below.\n"
-            "If the context does not contain the answer, say you do not know.\n\n"
+            "If the context does not contain the answer, "
+            "say you do not know.\n\n"
             f"Context:\n{context}\n\n"
             f"Question: {query}\n"
             "Answer:"
         )
         messages = [
-            {"role": "system", "content": "Answer using only the provided context."},
+            {
+                "role": "system",
+                "content": "Answer using only the provided context.",
+            },
             {"role": "user", "content": prompt},
         ]
         inputs = self.tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
             return_tensors="pt",
-            return_dict = True,
-            enable_thinking = False,
+            return_dict=True,
+            enable_thinking=False,
         ).to(self.model.device)
         input_ids = inputs["input_ids"]
-        output = self.model.generate(**inputs, max_new_tokens=256, do_sample=False)
-        return self.tokenizer.decode(output[0, input_ids.shape[-1]:], skip_special_tokens=True)
+        output = self.model.generate(
+            **inputs,
+            max_new_tokens=256,
+            do_sample=False,
+        )
+        new_tokens = output[0, input_ids.shape[-1]:]
+        text = self.tokenizer.decode(
+            new_tokens,
+            skip_special_tokens=True,
+        )
+        if not isinstance(text, str):
+            return str(text)
+        return text
 
     @staticmethod
-    def file_splitter(path: Path, max_chunk_size: int) -> RecursiveCharacterTextSplitter:
+    def file_splitter(
+            path: Path,
+            max_chunk_size: int,
+    ) -> RecursiveCharacterTextSplitter:
         DOC_LANGUAGES = {
             ".md": Language.MARKDOWN,
             ".rst": Language.RST,
