@@ -12,11 +12,9 @@ class RAG:
     def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
         self._index: list[MinimalSource] = []
         self.retriever: TFIDFRetriever | None = None
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map="auto",
-        )
+        self.tokenizer = None
+        self.model_name = model_name
+        self.model = None
         index_file = Path("data/processed/index.json")
         if index_file.is_file():
             with open("data/processed/index.json", "r", encoding="utf-8") as f:
@@ -33,6 +31,13 @@ class RAG:
             ]
             self.retriever = TFIDFRetriever.from_documents(documents)
 
+    def init_model(self) -> None:
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map="auto",
+        )
+
     def index(self, max_chunk_size: int) -> list[Document]:
         index_file = Path("data/processed/index.json")
         if not index_file.is_file():
@@ -45,10 +50,11 @@ class RAG:
                 except (OSError, UnicodeDecodeError, RuntimeError):
                     continue
                 splitter = RAG.file_splitter(file, max_chunk_size)
-                for doc in splitter.split_documents(docs):
-                    source = MinimalSource.from_document(doc)
-                    if source is not None:
-                        self._index.append(source)
+                if splitter:
+                    for doc in splitter.split_documents(docs):
+                        source = MinimalSource.from_document(doc)
+                        if source is not None:
+                            self._index.append(source)
             with open("data/processed/index.json", "w") as handle:
                 dumped = [item.to_dict() for item in self._index]
                 json.dump(dumped, handle, indent=4)
@@ -69,6 +75,8 @@ class RAG:
             query: str,
             k: int = 5,
             sources: list[Document] | None = None) -> str:
+        if not self.model or not self.tokenizer:
+            self.init_model()
         if not sources:
             sources = self.topk_retriever(k).invoke(query)
         context = "\n\n".join(
@@ -103,7 +111,7 @@ class RAG:
         input_ids = inputs["input_ids"]
         output = self.model.generate(
             **inputs,
-            max_new_tokens=256,
+            max_new_tokens=512,
             do_sample=False,
         )
         new_tokens = output[0, input_ids.shape[-1]:]
@@ -119,25 +127,31 @@ class RAG:
     def file_splitter(
             path: Path,
             max_chunk_size: int,
-    ) -> RecursiveCharacterTextSplitter:
+    ) -> RecursiveCharacterTextSplitter | None:
         DOC_LANGUAGES = {
             ".md": Language.MARKDOWN,
             ".rst": Language.RST,
         }
         suffix = path.suffix.lower()
-        if suffix == ".py":
-            language, overlap = Language.PYTHON, 0
-        elif suffix in DOC_LANGUAGES:
-            language, overlap = DOC_LANGUAGES[suffix], 50
-        else:
+        if suffix == ".txt" or suffix == "":
             return RecursiveCharacterTextSplitter(
                 chunk_size=max_chunk_size,
-                chunk_overlap=0,
+                chunk_overlap=50,
+            )
+        elif suffix == ".py":
+            language, overlap = Language.PYTHON, 100
+            return RecursiveCharacterTextSplitter.from_language(
+                language=language,
+                chunk_size=max_chunk_size,
+                chunk_overlap=overlap,
                 add_start_index=True,
             )
-        return RecursiveCharacterTextSplitter.from_language(
-            language=language,
-            chunk_size=max_chunk_size,
-            chunk_overlap=overlap,
-            add_start_index=True,
-        )
+        elif suffix in DOC_LANGUAGES:
+            language, overlap = DOC_LANGUAGES[suffix], 50
+            return RecursiveCharacterTextSplitter.from_language(
+                language=language,
+                chunk_size=max_chunk_size,
+                chunk_overlap=overlap,
+                add_start_index=True,
+            )
+        return None

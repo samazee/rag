@@ -109,6 +109,7 @@ class CLI:
             )
             dataset_file = Path(student_search_results_path)
             output_file = Path(save_directory) / dataset_file.name
+            output_file.parent.mkdir(parents=True, exist_ok=True)
             with output_file.open("w", encoding="utf-8") as f:
                 json.dump(search_results.to_dict(), f, indent=4)
 
@@ -130,7 +131,8 @@ class CLI:
                     from_dict(json.loads(contents)))
             with dataset_file.open("r", encoding="utf-8") as f:
                 contents = f.read()
-            rag_dataset = mods.RagDataset.from_dict(json.loads(contents))
+            dataset_dict = json.loads(contents)
+            rag_dataset = mods.RagDataset.from_dict(dataset_dict)
             assert search_results is not None, "failed to load search results"
             assert rag_dataset is not None, "failed to load dataset"
             has_source = 0
@@ -157,7 +159,7 @@ class CLI:
                     has_source += 1
             print(
                 f"recall@{search_results.k}:"
-                f"{has_source / len(rag_dataset.rag_questions)}%")
+                    f"{(has_source / len(rag_dataset.rag_questions) * 100):.2f}%")
         except Exception as e:
             print(f"{e.__class__.__name__}: {e}")
             sys.exit(1)

@@ -27,7 +27,7 @@ class MinimalSource(Model):
     file_path: str
     first_character_index: int
     last_character_index: int
-    chunk: str
+    chunk: str | None = None
 
     @classmethod
     def from_document(cls, doc: Document) -> "MinimalSource | None":
