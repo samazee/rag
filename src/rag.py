@@ -137,6 +137,7 @@ class RAG:
             return RecursiveCharacterTextSplitter(
                 chunk_size=max_chunk_size,
                 chunk_overlap=50,
+                add_start_index=True,
             )
         elif suffix == ".py":
             language, overlap = Language.PYTHON, 100
