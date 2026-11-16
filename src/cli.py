@@ -88,6 +88,8 @@ class CLI:
             self,
             student_search_results_path: str,
             save_directory: str, k: int = 5) -> None:
+        if k <= 0:
+            raise Exception("k must be a non zero positive integer.")
         try:
             with open(student_search_results_path, 'r', encoding="utf-8") as f:
                 contents = f.read()

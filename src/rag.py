@@ -51,8 +51,6 @@ class RAG:
                 json.dump(self._index.to_dict(), handle, indent=4)
             documents = self._index.get_documents()
             self.retriever = TFIDFRetriever.from_documents(documents)
-        else:
-            if 
 
         return self._index
 
