@@ -11,11 +11,17 @@ class CLI:
         self.rag = RAG()
 
     def index(self, max_chunk_size: int = 2000) -> None:
+        if max_chunk_size > 2000 or max_chunk_size < 100:
+            raise Exception("max_chunk_size must be a positive integer between 100 and 2000.")
         chunks = self.rag.index(max_chunk_size)
         for _ in tqdm(chunks):
             pass
 
     def search(self, query: str, k: int = 5) -> None:
+        if k <= 0:
+            raise Exception("k must be a non zero positive integer.")
+        if query == "":
+            raise Exception("query must be a non empty string.")
         if len(self.rag._index) == 0 or not self.rag.retriever:
             self.index()
         for doc in self.rag.topk_retriever(k).invoke(query):
@@ -28,6 +34,8 @@ class CLI:
             dataset_path: str,
             save_directory: str,
             k: int = 5) -> None:
+        if k <= 0:
+            raise Exception("k must be a non zero positive integer.")
         try:
             with open(dataset_path, 'r', encoding="utf-8") as f:
                 contents = f.read()

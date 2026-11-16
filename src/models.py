@@ -11,12 +11,10 @@ class Model(BaseModel):
     def from_dict(cls: type[T], data: dict[str, Any]) -> T | None:
         try:
             validated = cls.model_validate(data)
-        except ValidationError as exc:
-            print(exc)
-            return None
-        if isinstance(validated, cls):
+            assert isinstance(validated, cls), f"failed to validate {data} as {cls.__name__}"
             return validated
-        return None
+        except:
+            return None
 
     def to_dict(self) -> dict[str, Any]:
         dumped = self.model_dump()
@@ -51,6 +49,18 @@ class MinimalSource(Model):
             }
         )
 
+
+class Index(Model):
+    max_chunk_size: int = 0
+    _index: list[MinimalSource] = []
+
+    def get_documents(self) -> list[Document]:
+        return [
+            record.to_document() for record in self._index
+        ]
+    
+    def append(self, item: MinimalSource) -> None:
+        self._index.append(item)
 
 class UnansweredQuestion(Model):
     question_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

@@ -5,12 +5,11 @@ from langchain_community.document_loaders import TextLoader
 from langchain_community.retrievers import TFIDFRetriever
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from .models import MinimalSource
-
+from .models import MinimalSource, Index
 
 class RAG:
     def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
-        self._index: list[MinimalSource] = []
+        self._index: Index | None = None
         self.retriever: TFIDFRetriever | None = None
         self.tokenizer = None
         self.model_name = model_name
@@ -19,49 +18,42 @@ class RAG:
         if index_file.is_file():
             with open("data/processed/index.json", "r", encoding="utf-8") as f:
                 contents = f.read()
-            loaded = json.loads(contents)
-            records: list[MinimalSource] = []
-            for item in loaded:
-                record = MinimalSource.from_dict(item)
-                if record is not None:
-                    records.append(record)
-            self._index = records
-            documents = [
-                record.to_document() for record in self._index
-            ]
+            self._index = Index.from_dict(json.loads(contents))
+            documents = self._index.get_documents()
             self.retriever = TFIDFRetriever.from_documents(documents)
 
     def init_model(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
+            self.model_name,
             device_map="auto",
         )
 
-    def index(self, max_chunk_size: int) -> list[Document]:
+
+    def index(self, max_chunk_size: int) -> Index:
         index_file = Path("data/processed/index.json")
-        if not index_file.is_file():
-            raw_dir = Path("data/raw")
-            for file in raw_dir.rglob("*"):
-                if not file.is_file():
-                    continue
-                try:
-                    docs = TextLoader(file, encoding="utf-8").load()
-                except (OSError, UnicodeDecodeError, RuntimeError):
-                    continue
+        paths = RAG.flatten_dir("data/raw")
+        if not self._index or self._index.max_chunk_size != max_chunk_size:
+            _index = []
+            for file in paths:
+                docs = TextLoader(file, encoding="utf-8").load()
                 splitter = RAG.file_splitter(file, max_chunk_size)
                 if splitter:
                     for doc in splitter.split_documents(docs):
                         source = MinimalSource.from_document(doc)
-                        if source is not None:
-                            self._index.append(source)
+                        if source:
+                            _index.append(source)
+            self._index = Index.from_dict({
+                "max_chunk_size": max_chunk_size,
+                "_index": _index,
+            })
             with open("data/processed/index.json", "w") as handle:
-                dumped = [item.to_dict() for item in self._index]
-                json.dump(dumped, handle, indent=4)
-            documents = [
-                record.to_document() for record in self._index
-            ]
+                json.dump(self._index.to_dict(), handle, indent=4)
+            documents = self._index.get_documents()
             self.retriever = TFIDFRetriever.from_documents(documents)
+        else:
+            if 
+
         return self._index
 
     def topk_retriever(self, k: int) -> TFIDFRetriever:
@@ -122,6 +114,21 @@ class RAG:
         if not isinstance(text, str):
             return str(text)
         return text
+
+
+    @static_method
+    def flatten_dir() -> list[Path]:
+        raw_dir = Path("data/raw")
+        paths = []
+        for file in raw_dir.rglob("*"):
+            if not file.is_file():
+                continue
+            try:
+                TextLoader(file, encoding="utf-8").load()
+            except (OSError, UnicodeDecodeError, RuntimeError):
+                continue
+            paths.append(file)
+        return paths
 
     @staticmethod
     def file_splitter(
