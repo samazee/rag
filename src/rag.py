@@ -35,6 +35,7 @@ class RAG:
         paths = RAG.flatten_dir("data/raw")
         if not self._index or self._index.max_chunk_size != max_chunk_size:
             _index = []
+            print("parsable paths:", len(paths))
             for file in paths:
                 docs = TextLoader(file, encoding="utf-8").load()
                 splitter = RAG.file_splitter(file, max_chunk_size)
@@ -45,8 +46,9 @@ class RAG:
                             _index.append(source)
             self._index = Index.from_dict({
                 "max_chunk_size": max_chunk_size,
-                "_index": _index,
+                "chunks": _index,
             })
+            print(_index[0])
             with open("data/processed/index.json", "w") as handle:
                 json.dump(self._index.to_dict(), handle, indent=4)
             documents = self._index.get_documents()
@@ -114,9 +116,9 @@ class RAG:
         return text
 
 
-    @static_method
-    def flatten_dir() -> list[Path]:
-        raw_dir = Path("data/raw")
+    @staticmethod
+    def flatten_dir(path: str) -> list[Path]:
+        raw_dir = Path(path)
         paths = []
         for file in raw_dir.rglob("*"):
             if not file.is_file():

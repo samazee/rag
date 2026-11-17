@@ -13,8 +13,8 @@ class CLI:
     def index(self, max_chunk_size: int = 2000) -> None:
         if max_chunk_size > 2000 or max_chunk_size < 100:
             raise Exception("max_chunk_size must be a positive integer between 100 and 2000.")
-        chunks = self.rag.index(max_chunk_size)
-        for _ in tqdm(chunks):
+        _index = self.rag.index(max_chunk_size)
+        for _ in tqdm(_index.chunks):
             pass
 
     def search(self, query: str, k: int = 5) -> None:
@@ -22,7 +22,7 @@ class CLI:
             raise Exception("k must be a non zero positive integer.")
         if query == "":
             raise Exception("query must be a non empty string.")
-        if len(self.rag._index) == 0 or not self.rag.retriever:
+        if not self.rag._index or not self.rag.retriever:
             self.index()
         for doc in self.rag.topk_retriever(k).invoke(query):
             meta = doc.metadata
@@ -75,11 +75,11 @@ class CLI:
                     json.dump(search_results.to_dict(), f, indent=4)
 
         except Exception as e:
-            print(f"{e.__class__.__name__}: {e}")
+            print(f"{__file__}#{e.__traceback__.tb_lineno}:({e.__class__.__name__}){e}")
             sys.exit(1)
 
     def answer(self, query: str, k: int = 5) -> None:
-        if len(self.rag._index) == 0 or not self.rag.retriever:
+        if not self.rag._index or not self.rag.retriever:
             self.index()
         result = self.rag.answer(query, k)
         print(result)
@@ -124,7 +124,7 @@ class CLI:
                 json.dump(search_results.to_dict(), f, indent=4)
 
         except Exception as e:
-            print(f"{e.__class__.__name__}: {e}")
+            print(f"{__file__}#{e.__traceback__.tb_lineno}:({e.__class__.__name__}){e}")
             sys.exit(1)
 
     def evaluate(
@@ -171,5 +171,5 @@ class CLI:
                 f"recall@{search_results.k}:"
                     f"{(has_source / len(rag_dataset.rag_questions) * 100):.2f}%")
         except Exception as e:
-            print(f"{e.__class__.__name__}: {e}")
+            print(f"{__file__}#{e.__traceback__.tb_lineno}:({e.__class__.__name__}){e}")
             sys.exit(1)

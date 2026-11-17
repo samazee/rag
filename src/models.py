@@ -5,7 +5,6 @@ import uuid
 
 T = TypeVar("T", bound="Model")
 
-
 class Model(BaseModel):
     @classmethod
     def from_dict(cls: type[T], data: dict[str, Any]) -> T | None:
@@ -52,15 +51,15 @@ class MinimalSource(Model):
 
 class Index(Model):
     max_chunk_size: int = 0
-    _index: list[MinimalSource] = []
+    chunks: list[MinimalSource] = []
 
     def get_documents(self) -> list[Document]:
         return [
-            record.to_document() for record in self._index
+            record.to_document() for record in self.chunks
         ]
     
     def append(self, item: MinimalSource) -> None:
-        self._index.append(item)
+        self.chunks.append(item)
 
 class UnansweredQuestion(Model):
     question_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
