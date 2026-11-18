@@ -20,7 +20,12 @@ class RAG:
                 contents = f.read()
             self._index = Index.from_dict(json.loads(contents))
             documents = self._index.get_documents()
-            self.retriever = TFIDFRetriever.from_documents(documents)
+            self.retriever = TFIDFRetriever.from_documents(
+                documents=documents,
+                tfidf_params={
+                    "stop_words": 'english',
+                }
+            )
 
     def init_model(self) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
