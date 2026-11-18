@@ -9,6 +9,7 @@ dependencies = [
     "fire>=0.7.1",
     "langchain-community>=0.4.2",
     "pydantic>=2.14.1",
+    "rank-bm25>=0.2.2",
     "scikit-learn>=1.9.1",
     "torch>=2.14.1",
     "tqdm>=4.70.1",

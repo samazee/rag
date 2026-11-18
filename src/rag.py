@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader
-from langchain_community.retrievers import TFIDFRetriever
+from langchain_community.retrievers import BM25Retriever
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from .models import MinimalSource, Index
@@ -10,7 +10,7 @@ from .models import MinimalSource, Index
 class RAG:
     def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
         self._index: Index | None = None
-        self.retriever: TFIDFRetriever | None = None
+        self.retriever: BM25Retriever | None = None
         self.tokenizer = None
         self.model_name = model_name
         self.model = None
@@ -20,7 +20,7 @@ class RAG:
                 contents = f.read()
             self._index = Index.from_dict(json.loads(contents))
             documents = self._index.get_documents()
-            self.retriever = TFIDFRetriever.from_documents(
+            self.retriever = BM25Retriever.from_documents(
                 documents=documents,
                 tfidf_params={
                     "stop_words": 'english',
@@ -40,7 +40,6 @@ class RAG:
         paths = RAG.flatten_dir("data/raw")
         if not self._index or self._index.max_chunk_size != max_chunk_size:
             _index = []
-            print("parsable paths:", len(paths))
             for file in paths:
                 docs = TextLoader(file, encoding="utf-8").load()
                 splitter = RAG.file_splitter(file, max_chunk_size)
@@ -57,11 +56,11 @@ class RAG:
             with open("data/processed/index.json", "w") as handle:
                 json.dump(self._index.to_dict(), handle, indent=4)
             documents = self._index.get_documents()
-            self.retriever = TFIDFRetriever.from_documents(documents)
+            self.retriever = BM25Retriever.from_documents(documents)
 
         return self._index
 
-    def topk_retriever(self, k: int) -> TFIDFRetriever:
+    def topk_retriever(self, k: int) -> BM25Retriever:
         if self.retriever is None:
             raise RuntimeError("retriever is not initialized")
         self.retriever.k = k
