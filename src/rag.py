@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader
@@ -6,6 +7,9 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from .models import MinimalSource, Index
+
+def clean_tokenize(text: str) -> list[str]:
+    return re.findall(r"\b\w+\b", text.lower())
 
 class RAG:
     def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
@@ -22,9 +26,12 @@ class RAG:
             documents = self._index.get_documents()
             self.retriever = BM25Retriever.from_documents(
                 documents=documents,
-                tfidf_params={
-                    "stop_words": 'english',
-                }
+                preprocess_func=clean_tokenize,
+                bm25_params = {
+                    "k1": 1.1,
+                    "b": 0.4,
+                    "epsilon": 0.25
+                },
             )
 
     def init_model(self) -> None:
@@ -56,7 +63,6 @@ class RAG:
             with open("data/processed/index.json", "w") as handle:
                 json.dump(self._index.to_dict(), handle, indent=4)
             documents = self._index.get_documents()
-            self.retriever = BM25Retriever.from_documents(documents)
 
         return self._index
 
@@ -139,31 +145,19 @@ class RAG:
             path: Path,
             max_chunk_size: int,
     ) -> RecursiveCharacterTextSplitter | None:
-        DOC_LANGUAGES = {
-            ".md": Language.MARKDOWN,
-            ".rst": Language.RST,
-        }
         suffix = path.suffix.lower()
-        if suffix == ".txt" or suffix == "":
-            return RecursiveCharacterTextSplitter(
+        if suffix == ".py":
+            return RecursiveCharacterTextSplitter.from_language(
+                language=Language.PYTHON,
+                chunk_size=max_chunk_size,
+                chunk_overlap=100,
+                add_start_index=True,
+            )
+        elif suffix == ".md":
+            return RecursiveCharacterTextSplitter.from_language(
+                language=Language.MARKDOWN,
                 chunk_size=max_chunk_size,
                 chunk_overlap=50,
-                add_start_index=True,
-            )
-        elif suffix == ".py":
-            language, overlap = Language.PYTHON, 100
-            return RecursiveCharacterTextSplitter.from_language(
-                language=language,
-                chunk_size=max_chunk_size,
-                chunk_overlap=overlap,
-                add_start_index=True,
-            )
-        elif suffix in DOC_LANGUAGES:
-            language, overlap = DOC_LANGUAGES[suffix], 50
-            return RecursiveCharacterTextSplitter.from_language(
-                language=language,
-                chunk_size=max_chunk_size,
-                chunk_overlap=overlap,
                 add_start_index=True,
             )
         return None
