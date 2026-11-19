@@ -9,7 +9,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from .models import MinimalSource, Index
 
 def clean_tokenize(text: str) -> list[str]:
-    return re.findall(r"\b\w+\b", text.lower())
+    stop_words = []
+    with open("src/stop_words.txt", "r") as f:
+        stop_words = f.readlines()
+    words = [w for w in text.split() if w not in stop_words]
+    return words
+
 
 class RAG:
     def __init__(self, model_name: str = "Qwen/Qwen3-0.6B"):
